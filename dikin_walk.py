@@ -4,6 +4,7 @@ import argparse
 from concurrent import futures
 
 import numpy as np
+from scipy.optimize import linprog
 from matplotlib import pyplot as plt
 
 from six.moves import range
@@ -95,6 +96,19 @@ def hit_and_run(a, b, x0):
         yield x
 
 
+def chebyshev_center(a, b):
+    """Return Chebyshev center of the convex polytope."""
+    norm_vector = np.reshape(np.linalg.norm(a, axis=1), (a.shape[0], 1))
+    c = np.zeros(a.shape[1] + 1)
+    c[-1] = -1
+    a_lp = np.hstack((a, norm_vector))
+    res = linprog(c, A_ub=a_lp, b_ub=b, bounds=(None, None))
+    if not res.success:
+        raise Exception('Unable to find Chebyshev center')
+
+    return res.x[:-1]
+
+
 def collect_chain(sampler, count, burn, thin, *args, **kwargs):
     """Use the given sampler to collect points from a chain.
 
@@ -135,8 +149,8 @@ def main():
     args = parser.parse_args()
 
     # This example is based on a system of linear equalities and
-    # inequalities. The polytope to sample is the nullspace of the given
-    # system.
+    # inequalities. The convex polytope to sample is the nullspace of the
+    # given system.
 
     # Equalities
     # 1) x3 == 0
@@ -182,9 +196,10 @@ def main():
     a = leq.dot(nullspace)
     b = leq_rhs
 
-    # Initial point to start the chains from. TODO: How to best find a
-    # random initial point?
-    x0 = np.array([3, 3, 0]).dot(nullspace)
+    # Initial point to start the chains from.
+    # Use the Chebyshev center.
+    x0 = chebyshev_center(a, b)
+    print('Chebyshev center: {}'.format(x0.dot(nullspace.T)))
 
     print('A= {}'.format(a))
     print('b= {}'.format(b))
